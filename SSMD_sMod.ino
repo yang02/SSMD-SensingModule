@@ -38,12 +38,14 @@ const int HUM_MIN = 0;
 const int HUM_MAX = 100;
 
 //get average
-int buffer[SENSOR_NUM][BUFFER_LENGTH];
+const int duration = 1000;
+unsigned long timestamp;
+float buffer[SENSOR_NUM];
+float val[SENSOR_NUM];
 int index = 0;
 float preTemp = 0;
 float preHum = 0;
 
-int val[SENSOR_NUM];
 byte inByte = 0;  // incoming serial byte
 
 void setup()
@@ -73,47 +75,52 @@ void setup()
 
   // send a byte to establish contact until receiver responds 
   if(serialCom) establishContact();
+
+  timestamp = 0;
 }
 
 void loop()
 {
 
-  //
-  uint32_t start = micros();
-  int chk = DHT.read22(DHT22);
-  uint32_t stop = micros();
 
-  float data[SENSOR_NUM];
-  data[0] = getVolume(MIC);
+  int chk = DHT.read22(DHT22);
+
+  buffer[0] += getVolume(MIC);
   if(chk == DHTLIB_OK){
-    data[1] = DHT.temperature;
-    data[2] = DHT.humidity;
-    preTemp = data[1];
-    preHum = data[2];
+    buffer[1] += DHT.temperature;
+    buffer[2] += DHT.humidity;
+    preTemp = buffer[1];
+    preHum = buffer[2];
   }
   else{
-    data[1] = preTemp;
-    data[2] = preHum;
+    buffer[1] += preTemp;
+    buffer[2] += preHum;
   }
+  index++;
 
-  for(int i=0; i<SENSOR_NUM; i++){
-    buffer[i][index] = int(data[i]);
-    val[i] = getSmoothedData(buffer[i]);
-    index = (index + 1) % BUFFER_LENGTH;
-  }
+  //  for(int i=0; i<SENSOR_NUM; i++){
+  //    buffer[i][index] = int(data[i]);
+  //    val[i] = getSmoothedData(buffer[i]);
+  //    index = (index + 1) % BUFFER_LENGTH;
+  //  }
 
+  if(timestamp + duration < millis()) {
+
+    for(int i=0; i<SENSOR_NUM; i++){
+      val[i] = buffer[i] / index;
+    }
 
     // if we get a valid byte, read analog ins:
     if (Serial.available() > 0 && serialCom) {
       // get incoming byte:
       inByte = Serial.read();
-  
+
       for(int i=0; i<SENSOR_NUM; i++){
         int mappedVal;
-        if(i == 1) mappedVal = map(int(data[1]),TEMP_MIN,TEMP_MAX,SIG_MIN,SIG_MAX);
-        else if(i == 2) mappedVal = map(int(data[2]),HUM_MIN,HUM_MAX,SIG_MIN,SIG_MAX);
+        if(i == 1) mappedVal = map(int(val[1]),TEMP_MIN,TEMP_MAX,SIG_MIN,SIG_MAX);
+        else if(i == 2) mappedVal = map(int(val[2]),HUM_MIN,HUM_MAX,SIG_MIN,SIG_MAX);
         else mappedVal = int(val[0]);
-        
+
         Serial.write(mappedVal >> 8);
         Serial.write(mappedVal & 255);
         delay(5);
@@ -124,20 +131,22 @@ void loop()
       Serial.print("\t");
       Serial.print(val[0]);
       Serial.print("\t");
-      Serial.print(data[1]);
+      Serial.print(val[1]);
       Serial.print("\t");
-      Serial.print(data[2]);
+      Serial.print(val[2]);
+      Serial.print("\t");
+      Serial.print(index);
       Serial.println();
-  
+
       dataFile = SD.open("testLog.txt", FILE_WRITE);
       if(dataFile){
         dataFile.print(getTime(millis()));
         dataFile.print("\t");
-        dataFile.print(data[0]);
+        dataFile.print(val[0]);
         dataFile.print("\t");
-        dataFile.print(data[1]);
+        dataFile.print(val[1]);
         dataFile.print("\t");
-        dataFile.print(data[2]);
+        dataFile.print(val[2]);
         dataFile.println();
         dataFile.close();
       }
@@ -145,6 +154,13 @@ void loop()
         Serial.println(F("error opening datalog.txt"));
       }
     }
+
+    for(int i=0; i<SENSOR_NUM; i++){
+      buffer[i] = 0;
+    }
+    timestamp = millis();
+    index = 0;
+  }
 }
 
 /* SERIAL CONNECTION --------------------------------*/
@@ -208,5 +224,8 @@ String getTime(uint32_t mls){
   if((mls / 1000) % 60 < 10) s = "0" + s;
   return h + "." + m + "." + s;
 }
+
+
+
 
 
